@@ -64,7 +64,18 @@ validate_port() {
 
 check_dependencies() {
   command -v docker >/dev/null 2>&1 || { log_error "Docker is required but not installed."; exit 1; }
-  command -v docker-compose >/dev/null 2>&1 || { log_error "Docker Compose is required but not installed."; exit 1; }
+  
+  # Check for docker compose (new) or docker-compose (old)
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    DOCKER_COMPOSE="docker-compose"
+  else
+    log_error "Docker Compose is required but not installed. Please install Docker Compose."
+    exit 1
+  fi
+  
+  log_info "Using Docker Compose command: $DOCKER_COMPOSE"
 }
 
 # Core functions
@@ -110,7 +121,7 @@ list_projects() {
   fi
 
   local statuses
-  statuses=$(docker compose ps --format "{{.Name}} {{.State}}" 2>/dev/null | grep pocketbase_ || true)
+  statuses=$($DOCKER_COMPOSE ps --format "{{.Name}} {{.State}}" 2>/dev/null | grep pocketbase_ || true)
   
   printf "\n${BLUE}%-20s%-15s%-10s${NC}\n" "Project" "Status" "Port"
   printf "%-45s\n" "---------------------------------------------"
@@ -209,7 +220,7 @@ EOF
 
   # Start the services
   log_info "Starting services..."
-  if docker compose up -d "pocketbase_${PROJECT}" nginx --remove-orphans; then
+  if $DOCKER_COMPOSE up -d "pocketbase_${PROJECT}" nginx --remove-orphans; then
     log_success "Project '$PROJECT' started successfully!"
     log_info "Access your project at:"
     log_info "  - http://${PROJECT}.angusjs.xyz"
@@ -234,8 +245,8 @@ remove_project() {
 
   # Stop and remove container
   log_info "Stopping and removing container..."
-  docker compose stop "pocketbase_${PROJECT}" 2>/dev/null || true
-  docker compose rm -f "pocketbase_${PROJECT}" 2>/dev/null || true
+  $DOCKER_COMPOSE stop "pocketbase_${PROJECT}" 2>/dev/null || true
+  $DOCKER_COMPOSE rm -f "pocketbase_${PROJECT}" 2>/dev/null || true
 
   # Remove from docker-compose.yml
   awk -v svc="pocketbase_${PROJECT}:" '
@@ -280,7 +291,7 @@ remove_project() {
 
   # Restart nginx to apply changes
   log_info "Restarting nginx..."
-  docker compose up -d nginx --remove-orphans
+  $DOCKER_COMPOSE up -d nginx --remove-orphans
 
   log_success "Project '$PROJECT' removed successfully!"
 }
@@ -295,7 +306,7 @@ show_logs() {
   fi
 
   log_info "Showing logs for project '$PROJECT'..."
-  docker compose logs -f "pocketbase_${PROJECT}"
+  $DOCKER_COMPOSE logs -f "pocketbase_${PROJECT}"
 }
 
 show_status() {
@@ -311,7 +322,7 @@ show_status() {
   fi
 
   # Check nginx status
-  if docker compose ps nginx --format "{{.State}}" 2>/dev/null | grep -q "running"; then
+  if $DOCKER_COMPOSE ps nginx --format "{{.State}}" 2>/dev/null | grep -q "running"; then
     log_success "Nginx is running"
   else
     log_warning "Nginx is not running"
@@ -320,7 +331,7 @@ show_status() {
   # Show resource usage
   echo
   log_info "Container Resource Usage:"
-  docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" $(docker compose ps -q 2>/dev/null) 2>/dev/null || log_warning "No containers running"
+  docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" $($DOCKER_COMPOSE ps -q 2>/dev/null) 2>/dev/null || log_warning "No containers running"
   
   echo
   list_projects
@@ -375,7 +386,7 @@ start_service() {
   
   if [ "$NAME" == "all" ]; then
     log_info "Starting all services..."
-    if docker compose up -d --remove-orphans; then
+    if $DOCKER_COMPOSE up -d --remove-orphans; then
       log_success "All services started successfully!"
     else
       log_error "Failed to start services"
@@ -390,7 +401,7 @@ start_service() {
     fi
     
     log_info "Starting service '$NAME'..."
-    if docker compose up -d "pocketbase_$NAME" nginx --remove-orphans; then
+    if $DOCKER_COMPOSE up -d "pocketbase_$NAME" nginx --remove-orphans; then
       log_success "Service '$NAME' started successfully!"
     else
       log_error "Failed to start service '$NAME'"
@@ -404,7 +415,7 @@ stop_service() {
   
   if [ "$NAME" == "all" ]; then
     log_info "Stopping all services..."
-    if docker compose stop; then
+    if $DOCKER_COMPOSE stop; then
       log_success "All services stopped successfully!"
     else
       log_error "Failed to stop services"
@@ -419,7 +430,7 @@ stop_service() {
     fi
     
     log_info "Stopping service '$NAME'..."
-    if docker compose stop "pocketbase_$NAME"; then
+    if $DOCKER_COMPOSE stop "pocketbase_$NAME"; then
       log_success "Service '$NAME' stopped successfully!"
     else
       log_error "Failed to stop service '$NAME'"
@@ -433,7 +444,7 @@ restart_service() {
   
   if [ "$NAME" == "all" ]; then
     log_info "Restarting all services..."
-    if docker compose restart; then
+    if $DOCKER_COMPOSE restart; then
       log_success "All services restarted successfully!"
     else
       log_error "Failed to restart services"
@@ -448,7 +459,7 @@ restart_service() {
     fi
     
     log_info "Restarting service '$NAME'..."
-    if docker compose restart "pocketbase_$NAME" nginx; then
+    if $DOCKER_COMPOSE restart "pocketbase_$NAME" nginx; then
       log_success "Service '$NAME' restarted successfully!"
     else
       log_error "Failed to restart service '$NAME'"
